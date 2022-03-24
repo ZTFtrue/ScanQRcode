@@ -18,7 +18,6 @@ package com.ztftrue.scancode.fragments
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.content.res.Configuration
 import android.hardware.display.DisplayManager
 import android.net.Uri
@@ -40,7 +39,7 @@ import androidx.navigation.Navigation
 import androidx.window.WindowManager
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
+import com.ztftrue.scancode.R
 import com.ztftrue.scancode.databinding.CameraUiContainerBinding
 import com.ztftrue.scancode.databinding.FragmentCameraBinding
 import java.nio.ByteBuffer
@@ -50,8 +49,6 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import com.ztftrue.scancode.R
-
 
 /** Helper type alias used for analysis use case callbacks */
 typealias LumaListener = (luma: Double) -> Unit
@@ -146,7 +143,7 @@ class CameraFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        viewModel = ViewModelProvider(requireActivity()).get(MainViewModel::class.java)
+        viewModel = ViewModelProvider(requireActivity())[MainViewModel::class.java]
         scanner = BarcodeScanning.getClient(/*options*/)
         _fragmentCameraBinding = FragmentCameraBinding.inflate(inflater, container, false)
         return fragmentCameraBinding.root
@@ -161,7 +158,6 @@ class CameraFragment : Fragment() {
         // Initialize our background executor
         cameraExecutor = Executors.newSingleThreadExecutor()
         scannerExecutor = Executors.newSingleThreadExecutor()
-
         broadcastManager = LocalBroadcastManager.getInstance(view.context)
 
 
@@ -195,12 +191,8 @@ class CameraFragment : Fragment() {
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-
         // Rebind the camera with the updated display metrics
         bindCameraUseCases()
-
-        // Enable or disable switching between cameras
-        updateCameraSwitchButton()
     }
 
     /** Initialize CameraX, and prepare to bind the camera use cases  */
@@ -217,17 +209,12 @@ class CameraFragment : Fragment() {
                 hasFrontCamera() -> CameraSelector.LENS_FACING_FRONT
                 else -> throw IllegalStateException("Back and front camera are unavailable")
             }
-
-            // Enable or disable switching between cameras
-            updateCameraSwitchButton()
-
             // Build and bind the camera use cases
             bindCameraUseCases()
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
     /** Declare and bind preview, capture and analysis use cases */
-    @SuppressLint("UnsafeOptInUsageError")
     private fun bindCameraUseCases() {
 
         // Get screen metrics used to setup camera for full screen resolution
@@ -282,33 +269,7 @@ class CameraFragment : Fragment() {
                     Log.d(TAG, "Average luminosity: $luma")
                 })
                 it.setAnalyzer(scannerExecutor) { imageProxy ->
-                    val mediaImage = imageProxy.image
-                    if (mediaImage != null) {
-                        val image =
-                            InputImage.fromMediaImage(
-                                mediaImage,
-                                imageProxy.imageInfo.rotationDegrees
-                            )
-
-                        scanner.process(image)
-                            .addOnSuccessListener { barcodes ->
-                                if (barcodes != null && barcodes.isNotEmpty()) {
-                                    requireActivity().runOnUiThread {
-                                        viewModel.setBarcodes(barcodes)
-                                        Navigation.findNavController(
-                                            requireActivity(), R.id.fragment_container
-                                        ).navigate(
-                                            CameraFragmentDirections.actionCameraToGallery("")
-                                        )
-                                    }
-                                }
-                                imageProxy.close()
-                            }
-                            .addOnFailureListener {
-                                imageProxy.close()
-//                                it.printStackTrace()
-                            }
-                    }
+                    viewModel.scanBarcode(imageProxy, requireActivity())
                 }
             }
 
@@ -489,55 +450,18 @@ class CameraFragment : Fragment() {
 
 
         // Setup for button used to switch cameras
-        cameraUiContainerBinding?.cameraSwitchButton?.let { it ->
-
-            // Disable the button until the camera is set up
-
-            // Listener for button used to switch cameras. Only called if the button is enabled
+        cameraUiContainerBinding?.selectImageButton?.let { it ->
             it.setOnClickListener {
-                val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
-                contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)
-                contentSelectionIntent.type = "image/*"
-                contentSelectionIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
-                val chooserIntent = Intent(Intent.ACTION_CHOOSER)
-                chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent)
-                chooserIntent.putExtra(Intent.EXTRA_TITLE, "")
-
                 startForResult.launch("image/*")
             }
-
-
         }
     }
 
     private fun dealFile(uri: Uri) {
-        scanner.process(InputImage.fromFilePath(requireContext(), uri))
-            .addOnSuccessListener { barcodes ->
-                if (barcodes != null && barcodes.isNotEmpty()) {
-                    requireActivity().runOnUiThread {
-                        viewModel.setBarcodes(barcodes)
-                        Navigation.findNavController(
-                            requireActivity(), R.id.fragment_container
-                        ).navigate(
-                            CameraFragmentDirections.actionCameraToGallery("")
-                        )
-                    }
-                }
-            }
-            .addOnFailureListener {
-                it.printStackTrace()
-            }
+        viewModel.scanBarcode(uri, requireActivity())
+
     }
 
-    /** Enabled or disabled a button to switch cameras depending on the available cameras */
-    private fun updateCameraSwitchButton() {
-        try {
-            cameraUiContainerBinding?.cameraSwitchButton?.isEnabled =
-                hasBackCamera() && hasFrontCamera()
-        } catch (exception: CameraInfoUnavailableException) {
-            cameraUiContainerBinding?.cameraSwitchButton?.isEnabled = false
-        }
-    }
 
     /** Returns true if the device has an available back camera. False otherwise */
     private fun hasBackCamera(): Boolean {
