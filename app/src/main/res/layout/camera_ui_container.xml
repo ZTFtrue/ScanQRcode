@@ -21,7 +21,7 @@
     android:layoutDirection="ltr">
 
     <!-- Camera control and gallery buttons -->
-    <ImageButton
+    <androidx.appcompat.widget.AppCompatImageButton
         android:id="@+id/select_image_button"
         android:layout_width="@dimen/round_button_medium"
         android:layout_height="@dimen/round_button_medium"
